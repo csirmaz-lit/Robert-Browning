@@ -1,5 +1,9 @@
 #!/usr/bin/perl
 
+# TODO
+# - split output
+# - TOC indent overwritten
+
 use strict;
 
 sub loadfile {
@@ -68,7 +72,7 @@ $text =~ s/<p class='thbq(?:1|1i)?'> *(.*?)<\/p> */do{
 foreach my $conv (1,2,3,4) {
 $text =~ s/<p class='MsoToc${conv}'> *(.*?)<\/p> */do{
   my $t = $1;
-  ("  " x ($conv-1)) . "* " . $t . "\n";
+  ("::" x ($conv-1)) . "* " . $t . "\n";
 }/egs;
 }
 
