@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 
-# images
-
 use strict;
 
 sub loadfile {
@@ -165,6 +163,17 @@ for my $i (1,2){
 $text =~ s/<span>(.*?)<\/span>/$1/g;
 }
 
+# too many newlines
+$text =~ s/\n{2,}/\n\n/g;
+
+# images
+$text =~ s/<div align='center'> <img src="([^"]+)" alt="" \/> <\/div>/do{
+  my $url = $1;
+  $url =~ s{\\_}{_}g;
+  '<img src="images\/'.$url.'">';
+}/gse;
+
+# note non-ascii chars
 $text =~ s/[^\x{0a}\x{20}-\x{7f}]/do{
   print "(((".substr($`,-20)."|||".$&."|||".substr($',0,20).")))\n";
   $&;
