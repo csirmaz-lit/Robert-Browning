@@ -15,6 +15,15 @@ sub loadfile {
   return $o;
 }
 
+sub savefile {
+  my $filename = shift;
+  my $contents = shift;
+  
+  open(my $fh, '>', $filename) or die "cannot open file: $!";
+  print $fh $contents;
+  close($fh);
+}
+
 my $text;
 while(<STDIN>){ $text .= $_; }
 
@@ -72,7 +81,8 @@ $text =~ s/<p class='thbq(?:1|1i)?'> *(.*?)<\/p> */do{
 foreach my $conv (1,2,3,4) {
 $text =~ s/<p class='MsoToc${conv}'> *(.*?)<\/p> */do{
   my $t = $1;
-  ("::" x ($conv-1)) . "* " . $t . "\n";
+  ("  " x ($conv-1)) . "* " . $t . "\n"; # indentation overwritten somewhere
+  ''; # delete TOC
 }/egs;
 }
 
@@ -89,37 +99,6 @@ $text =~ s/(<a name="[^"]+"><\/a>)\s+/$1/g;
 
 $text =~ s/<br> */<br>/g;
 $text =~ s/ *<br>/<br>/g;
-
-# footnotes
-my %footnotes;
-$text =~ s/<div id='ftn(\d+)'> *<p class='MsoFootnoteText'> *(.*?) *<\/p> *<\/div>/do{
-  $footnotes{$1} = $2;
-  '';
-}/gse;
-$text .= "\n\n# Footnotes\n\n";
-foreach my $ftn (sort {$a <=> $b} keys %footnotes){
-  $text .= "* ".$footnotes{$ftn}."\n";
-}
-
-# extratext
-$text =~ s/<div class="extratext"> *Please note that a more extensive introduction.*?<\/div>//;
-$text =~ s/(<a name="postscript"><\/a>)<div class="extratext"> *<b>POSTSCRIPT<\/b>(.*?)<\/div>/# $1Postscript\n\n$2/;
-$text =~ s/<div class="extratext">.*?<\/div>//g;
-
-$text =~ s/(then)<br>(personifying)/$1 $2/;
-$text =~ s/<span>caliban.<\/span>/CALIBAN./g;
-
-# too many newlines
-$text =~ s/\n{2,}/\n\n/g;
-
-$text =~ s/\n(<br>)+/\n/g;
-$text =~ s/<div> *<\/div>//g;
-
-# merge blockquotes
-$text =~ s/\n> ([^\n]{1,80})(?=\n)/\n> \$$1/gs; # mark short blockquotes with "> $"
-$text =~ s/> \$([^\n]+)\n+(?=> \$)/> \$$1/gs; # remove newlines
-$text =~ s/(?<!\n)> \$/<br>/g;
-$text =~ s/\n> \$/\n> /g;
 
 # non-ascii
 # $text =~ s/\x{f6}/&ouml;/g;
@@ -145,6 +124,39 @@ $text =~ s/\x{c3}\x{b9}/&ugrave;/g;
 $text =~ s/\x{c2}\x{bb}/&raquo;/g;
 $text =~ s/\x{c2}\x{ab}/&laquo;/g;
 $text =~ s/\x{c2}\x{ad}//g; # shy
+
+
+# footnotes
+my %footnotes;
+$text =~ s/<div id='ftn(\d+)'> *<p class='MsoFootnoteText'> *(.*?) *<\/p> *<\/div>/do{
+  $footnotes{$1} = $2;
+  '';
+}/gse;
+# $text .= "\n\n# Footnotes\n\n";
+# foreach my $ftn (sort {$a <=> $b} keys %footnotes){
+#   $text .= "* ".$footnotes{$ftn}."\n";
+# }
+
+# extratext
+$text =~ s/<div class="extratext"> *Please note that a more extensive introduction.*?<\/div>//;
+$text =~ s/(<a name="postscript"><\/a>)<div class="extratext"> *<b>POSTSCRIPT<\/b>(.*?)<\/div>/# $1Postscript\n\n$2/;
+$text =~ s/<div class="extratext">.*?<\/div>//g;
+
+$text =~ s/(then)<br>(personifying)/$1 $2/;
+$text =~ s/<span>caliban.<\/span>/CALIBAN./g;
+
+# too many newlines
+$text =~ s/\n{2,}/\n\n/g;
+
+$text =~ s/\n(<br>)+/\n/g;
+$text =~ s/<div> *<\/div>//g;
+
+# merge blockquotes
+$text =~ s/\n> ([^\n]{1,80})(?=\n)/\n> \$$1/gs; # mark short blockquotes with "> $"
+$text =~ s/> \$([^\n]+)\n+(?=> \$)/> \$$1/gs; # remove newlines
+$text =~ s/(?<!\n)> \$/<br>/g;
+$text =~ s/\n> \$/\n> /g;
+
 
 # custom syntax
 $text =~ s/\[sup\](.*?)\[\/sup\]/<sup>$1<\/sup>/g;
@@ -180,7 +192,91 @@ $text =~ s/<div align='center'> <img src="([^"]+)" alt="" \/> <\/div>/do{
 # note non-ascii chars
 $text =~ s/[^\x{0a}\x{20}-\x{7f}]/do{
   print "(((".substr($`,-20)."|||".$&."|||".substr($',0,20).")))\n";
+  die "found nonascii";
   $&;
 }/sge;
 
-print $text;
+# ------------------- split document ---------------------
+
+my $MAXLENGTH = 64*1024;
+my @documents;
+my $docix = 0;
+my $thislength = 0;
+my @thisfns; # footnotes
+my @TOC;
+
+sub getfootnotes {
+  $documents[$docix] .= "\n\n# Notes\n\n" if @thisfns;
+  foreach my $fn ( sort {$a<=>$b} keys %{{map {$_=>1} @thisfns}} ) {
+    $documents[$docix] .= '* '.$footnotes{$fn}."\n";
+  }  
+}
+
+foreach my $line (split(/\n/, $text)) {
+  if($line =~ /^##? /) {
+    if($thislength > $MAXLENGTH) {
+      # Add footnotes
+      getfootnotes();
+      @thisfns = ();
+    
+      # continue writing the next document
+      $docix++;
+      $thislength = 0;
+    }
+  }
+  
+  # header?
+  if($line =~ /^(#+) /) {
+    if($line =~ /^(#+) <a name="([^"]+)"><\/a>(.*)/){
+      my $level = $1;
+      my $hash = $2;
+      my $title = $3;
+      $title =~ s/\s+$//;
+      $title =~ s/<a href.*?<\/a>//;      
+      if($title =~ /Contents/){
+        $line .= "\n\n[[contents]]\n";
+      }
+      else {
+        push @TOC, {'document'=>$docix, 'level'=>length($level), 'a'=>$hash, 'title'=>$title};
+      }
+    }
+    elsif($line !~ /The Tomb of the Author|Abstract/){
+      die "Cannot parse header $line";
+    }
+  }
+  
+  # footnote?
+  if($line =~ /ftn(\d+)/){
+    push @thisfns, $1;
+  }
+  
+  # Add line
+  $documents[$docix] .= $line . "\n";
+  $thislength += length($line);  
+}
+getfootnotes();
+
+# Generate TOC
+my $tocout = '';
+foreach my $tocd (@TOC) {
+  $tocout .= ('  ' x ($tocd->{'level'}-1)) . '* ' . '[[Thesis' . $tocd->{'document'} . '#' . $tocd->{'a'} . '|' . $tocd->{'title'} . "]]\n";
+}
+$documents[0] =~ s/\[\[contents\]\]/$tocout/;
+
+foreach my $i (0..(scalar(@documents)-1)) {
+  if($i > 0){
+     $documents[$i] =
+       "The Tomb of the Author in Robert Browning&#8217;s Dramatic Monologues by El&#337;d P&aacute;l Csirmaz\n\n" 
+       . "[[Thesis0#contents|Back to the contents]]\n\n[[Thesis".($i-1)."|Previous section]]\n\n"
+       . $documents[$i];
+  }
+  if($i < scalar(@documents)-1) {
+    my $link = "\n\n[[Thesis".($i+1)."|Continue reading]]\n\n";
+    $documents[$i] =~ s/# Notes/$link$&/;
+    $documents[$i] .= $link;
+  }
+
+  savefile("Thesis".$i.".wiki", $documents[$i]);
+}
+
+# print join("\n\n============================================\n\n", @documents);
