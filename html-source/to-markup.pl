@@ -198,7 +198,8 @@ $text =~ s/[^\x{0a}\x{20}-\x{7f}]/do{
 
 # ------------------- split document ---------------------
 
-my $MAXLENGTH = 64*1024;
+my $MAXLENGTH = 20*1024;
+my $HARDMAXLENGTH = 32*1024;
 my @documents;
 my $docix = 0;
 my $thislength = 0;
@@ -212,9 +213,7 @@ sub getfootnotes {
   }  
 }
 
-foreach my $line (split(/\n/, $text)) {
-  if($line =~ /^##? /) {
-    if($thislength > $MAXLENGTH) {
+sub nextdoc {
       # Add footnotes
       getfootnotes();
       @thisfns = ();
@@ -222,7 +221,14 @@ foreach my $line (split(/\n/, $text)) {
       # continue writing the next document
       $docix++;
       $thislength = 0;
-    }
+}
+
+foreach my $line (split(/\n/, $text)) {
+  if($line =~ /^#+ / && $thislength > $MAXLENGTH) {
+    nextdoc();
+  }
+  elsif($line =~ /^\s*$/ && $thislength > $HARDMAXLENGTH) {
+    nextdoc();
   }
   
   # header?
