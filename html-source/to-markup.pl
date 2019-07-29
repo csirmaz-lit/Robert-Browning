@@ -1,8 +1,6 @@
 #!/usr/bin/perl
 
-# TODO
-# - split output
-# - TOC indent overwritten
+# This script converts the thesis in HTML format into wiki format
 
 use strict;
 
@@ -57,7 +55,7 @@ $text =~ s/<br>\s*<p\s/<p /g;
 foreach my $conv (1,2,3,4) {
 $text =~ s/<p class='thh${conv}n?' *> *(.*?)<\/p> */do{
   my $t = $1;
-  "\n\n".("#" x $conv)." " . $t . "\n\n";
+  "\n\n".("=" x $conv). $t . ("=" x $conv). "\n\n";
 }/egs;
 }
 
@@ -69,19 +67,19 @@ $text =~ s/<p class='thbibl'> *(.*?)<\/p> */* $1\n/gs;
 
 
 # blockquote
-$text =~ s/<p class='thbq(?:1|1i)?'> *(.*?)<\/p> */do{
+$text =~ s!<p class='thbq(?:1|1i)?'> *(.*?)<\/p> *!do{
   my $t = $1;
   $t =~ s{[\n\s]+$}{};
   $t =~ s{\n}{\n> }g;
   # $t = '$'.$t if length($t)<80;
-  "\n\n> ".$t."\n\n";
-}/egs;
+  "\n\n<blockquote>\n".$t."\n</blockquote>\n\n";
+}!egs;
 
 # toc
 foreach my $conv (1,2,3,4) {
 $text =~ s/<p class='MsoToc${conv}'> *(.*?)<\/p> */do{
   my $t = $1;
-  ("  " x ($conv-1)) . "* " . $t . "\n"; # indentation overwritten somewhere
+  ("*" x ($conv)) . " " . $t . "\n"; # indentation overwritten somewhere
   ''; # delete TOC
 }/egs;
 }
@@ -152,10 +150,10 @@ $text =~ s/\n(<br>)+/\n/g;
 $text =~ s/<div> *<\/div>//g;
 
 # merge blockquotes
-$text =~ s/\n> ([^\n]{1,80})(?=\n)/\n> \$$1/gs; # mark short blockquotes with "> $"
-$text =~ s/> \$([^\n]+)\n+(?=> \$)/> \$$1/gs; # remove newlines
-$text =~ s/(?<!\n)> \$/<br>/g;
-$text =~ s/\n> \$/\n> /g;
+# $text =~ s/\n> ([^\n]{1,80})(?=\n)/\n> \$$1/gs; # mark short blockquotes with "> $"
+# $text =~ s/> \$([^\n]+)\n+(?=> \$)/> \$$1/gs; # remove newlines
+# $text =~ s/(?<!\n)> \$/<br>/g;
+# $text =~ s/\n> \$/\n> /g;
 
 
 # custom syntax
@@ -172,7 +170,7 @@ $text =~ s/^([^\n]+)/do{
   my @hl = split(m{<br>}, $h);
   my $name = shift(@hl);
   my $title = shift(@hl);
-  '# '.$title."\n\n".join('<br>', ($name,@hl));
+  '='.$title."=\n\n".join('<br>', ($name,@hl));
 }/sge;
 
 for my $i (1,2){
@@ -207,7 +205,7 @@ my @thisfns; # footnotes
 my @TOC;
 
 sub getfootnotes {
-  $documents[$docix] .= "\n\n# Notes\n\n" if @thisfns;
+  $documents[$docix] .= "\n\n=Notes=\n\n" if @thisfns;
   foreach my $fn ( sort {$a<=>$b} keys %{{map {$_=>1} @thisfns}} ) {
     $documents[$docix] .= '* '.$footnotes{$fn}."\n";
   }  
@@ -224,7 +222,7 @@ sub nextdoc {
 }
 
 foreach my $line (split(/\n/, $text)) {
-  if($line =~ /^#+ / && $thislength > $MAXLENGTH) {
+  if($line =~ /^=+/ && $thislength > $MAXLENGTH) {
     nextdoc();
   }
   elsif($line =~ /^\s*$/ && $thislength > $HARDMAXLENGTH) {
@@ -232,15 +230,15 @@ foreach my $line (split(/\n/, $text)) {
   }
   
   # header?
-  if($line =~ /^(#+) /) {
-    if($line =~ /^(#+) <a name="([^"]+)"><\/a>(.*)/){
+  if($line =~ /^(=+)/) {
+    if($line =~ /^(=+) ?<a name="([^"]+)"><\/a>([^=]*)/){
       my $level = $1;
       my $hash = $2;
       my $title = $3;
       $title =~ s/\s+$//;
       $title =~ s/<a href.*?<\/a>//;      
       if($title =~ /Contents/){
-        $line .= "\n\n[[contents]]\n";
+        $line = "=Full Contents=\n\n[[contents]]\n";
       }
       else {
         push @TOC, {'document'=>$docix, 'level'=>length($level), 'a'=>$hash, 'title'=>$title};
@@ -265,20 +263,20 @@ getfootnotes();
 # Generate TOC
 my $tocout = '';
 foreach my $tocd (@TOC) {
-  $tocout .= ('  ' x ($tocd->{'level'}-1)) . '* ' . '[[Thesis' . $tocd->{'document'} . '#' . $tocd->{'a'} . '|' . $tocd->{'title'} . "]]\n";
+  $tocout .= ('*' x ($tocd->{'level'})) . ' ' . '[[Thesis' . $tocd->{'document'} . '#' . $tocd->{'a'} . '|' . $tocd->{'title'} . "]]\n";
 }
 $documents[0] =~ s/\[\[contents\]\]/$tocout/;
 
 foreach my $i (0..(scalar(@documents)-1)) {
   if($i > 0){
      $documents[$i] =
-       "The Tomb of the Author in Robert Browning&#8217;s Dramatic Monologues by El&#337;d P&aacute;l Csirmaz\n\n" 
+       "The Tomb of the Author in Robert Browning&#8217;s Dramatic Monologues by El&#337;d P&aacute;l Csirmaz, part ".($i+1)." of ".scalar(@documents)."\n\n" 
        . "[[Thesis0#contents|Back to the contents]]\n\n[[Thesis".($i-1)."|Previous section]]\n\n"
        . $documents[$i];
   }
   if($i < scalar(@documents)-1) {
     my $link = "\n\n[[Thesis".($i+1)."|Continue reading]]\n\n";
-    $documents[$i] =~ s/# Notes/$link$&/;
+    $documents[$i] =~ s/=Notes=/$link$&/;
     $documents[$i] .= $link;
   }
 
